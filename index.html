@@ -709,7 +709,7 @@ function startGame(){
 function loop(now){
  const dt=Math.min(.033,(now-last)/1000);last=now;
  if(G){
-  if(!G.paused&&!G.over)update(dt);
+  if(!G.paused&&!G.over)update(dt);audioTick(dt);
   draw();
   if(!G.over&&ME)updateHUD(dt);
  }
@@ -764,6 +764,135 @@ $('resume').onclick=togglePause;
 $('quit').onclick=()=>{G=null;hideAim();show('menu')};
 $('pbtn').onclick=togglePause;
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&G&&!G.paused&&!G.over)togglePause()});
+/* ---------- 存檔 / 代幣 / 商店 ---------- */
+const SAVE_KEY='nr_save_v1';
+let SAVE={tokens:0,own:{},eq:{trail:'',fx:'',title:''},stock:{battery:0,armor:0,double:0},use:{battery:false,armor:false,double:false},total:{matches:0,kills:0,wins:0},last:''};
+let DOUBLE=false;
+function loadSave(){try{const s=JSON.parse(localStorage.getItem(SAVE_KEY));if(s)SAVE=Object.assign(SAVE,s)}catch(e){}}
+function saveSave(){try{localStorage.setItem(SAVE_KEY,JSON.stringify(SAVE))}catch(e){}}
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(toast.h);toast.h=setTimeout(()=>t.classList.remove('show'),1800)}
+function updateTokenUI(){$('menuTokens').textContent=SAVE.tokens;$('shopTokens').textContent=SAVE.tokens}
+function dailyBonus(){
+ const d=new Date().toISOString().slice(0,10);
+ if(SAVE.last!==d){SAVE.last=d;SAVE.tokens+=30;saveSave();setTimeout(()=>toast('每日登入獎勵 ⬡ +30'),600)}
+}
+const ITEMS=[
+ {id:'trail_cyan',cat:'trail',name:'青藍軌跡',price:80,color:'#00f0ff'},
+ {id:'trail_pink',cat:'trail',name:'霓虹粉軌跡',price:80,color:'#ff2bd6'},
+ {id:'trail_gold',cat:'trail',name:'黃金軌跡',price:200,color:'#ffe14b'},
+ {id:'trail_rb',cat:'trail',name:'彩虹軌跡',price:350,color:'rainbow'},
+ {id:'fx_gold',cat:'fx',name:'金色爆擊',price:120,color:'#ffe14b'},
+ {id:'fx_ice',cat:'fx',name:'冰晶碎裂',price:120,color:'#8fe9ff'},
+ {id:'fx_pixel',cat:'fx',name:'像素煙火',price:250,color:'rainbow'},
+ {id:'title_hunter',cat:'title',name:'裂隙獵人',price:60},
+ {id:'title_ace',cat:'title',name:'競技王牌',price:150},
+ {id:'title_legend',cat:'title',name:'傳說',price:400},
+ {id:'battery',cat:'item',name:'能量電池',desc:'開局大招能量 100%',price:40},
+ {id:'armor',cat:'item',name:'裝甲塗層',desc:'本場最大生命 +20%',price:50},
+ {id:'double',cat:'item',name:'雙倍代幣券',desc:'本場獲得代幣 ×2',price:70}
+];
+function itemCard(i){
+ let btn='';
+ if(i.cat==='item'){
+  const n=SAVE.stock[i.id]||0;
+  btn=`<div class="small">持有 ${n}</div><button class="btn sm" data-act="buy" data-id="${i.id}">購買 ⬡${i.price}</button>`+
+   (n>0?`<label class="chk"><input type="checkbox" data-act="use" data-id="${i.id}" ${SAVE.use[i.id]?'checked':''}> 下場使用</label>`:'');
+ }else if(SAVE.own[i.id]){
+  const on=SAVE.eq[i.cat]===i.id;
+  btn=`<button class="btn sm ${on?'alt':''}" data-act="eq" data-id="${i.id}">${on?'已裝備(點擊卸下)':'裝備'}</button>`;
+ }else btn=`<button class="btn sm" data-act="buy" data-id="${i.id}">購買 ⬡${i.price}</button>`;
+ const sw=i.color?`<span class="sw" style="background:${i.color==='rainbow'?'linear-gradient(90deg,red,yellow,lime,cyan,magenta)':i.color}"></span>`:'';
+ return `<div class="icard">${sw}<b>${i.name}</b><div class="small">${i.desc||''}</div>${btn}</div>`;
+}
+function renderShop(){
+ updateTokenUI();
+ const cats=[['trail','移動軌跡'],['fx','擊殺特效'],['title','稱號'],['item','比賽道具(一次性)']];
+ let h='';
+ cats.forEach(([c,label])=>{
+  h+=`<div class="panel"><div class="shead">${label}</div><div class="sgrid">`;
+  ITEMS.filter(i=>i.cat===c).forEach(i=>{h+=itemCard(i)});
+  h+='</div></div>';
+ });
+ $('shopBody').innerHTML=h;
+}
+function buy(id){
+ const i=ITEMS.find(x=>x.id===id);if(!i)return;
+ if(i.cat!=='item'&&SAVE.own[id])return;
+ if(SAVE.tokens<i.price){SFX.deny();toast('代幣不足');return}
+ SAVE.tokens-=i.price;
+ if(i.cat==='item')SAVE.stock[id]=(SAVE.stock[id]||0)+1;
+ else{SAVE.own[id]=1;SAVE.eq[i.cat]=id}
+ saveSave();SFX.buy();renderShop();
+}
+$('shopBody').addEventListener('click',e=>{
+ const el=e.target.closest('[data-act]');if(!el)return;
+ const act=el.dataset.act,id=el.dataset.id;
+ if(act==='buy')buy(id);
+ else if(act==='eq'){const i=ITEMS.find(x=>x.id===id);SAVE.eq[i.cat]=SAVE.eq[i.cat]===id?'':id;saveSave();renderShop()}
+});
+$('shopBody').addEventListener('change',e=>{
+ const el=e.target.closest('[data-act="use"]');if(!el)return;
+ SAVE.use[el.dataset.id]=el.checked;saveSave();
+});
+
+/* ---------- 比賽中套用 / 結算 ---------- */
+function applyPerks(f){
+ DOUBLE=false;
+ if(SAVE.use.battery&&SAVE.stock.battery>0){SAVE.stock.battery--;f.ult=100}
+ if(SAVE.use.armor&&SAVE.stock.armor>0){SAVE.stock.armor--;f.max=Math.round(f.max*1.2)}
+ if(SAVE.use.double&&SAVE.stock.double>0){SAVE.stock.double--;DOUBLE=true}
+ for(const k of['battery','armor','double'])if((SAVE.stock[k]||0)<=0)SAVE.use[k]=false;
+ const ti=ITEMS.find(i=>i.id===SAVE.eq.title);f.title=ti?ti.name:'';
+ saveSave();
+}
+let _tr=0;
+function trailTick(dt){
+ const it=ITEMS.find(i=>i.id===SAVE.eq.trail);
+ if(!it||!ME||ME.dead)return;
+ _tr-=dt;if(_tr>0)return;_tr=.025;
+ if(Math.hypot(ME.vx,ME.vy)<40)return;
+ const col=it.color==='rainbow'?`hsl(${(performance.now()/4)%360},100%,60%)`:it.color;
+ PT.push({x:ME.x-ME.vx*.02,y:ME.y-ME.vy*.02,vx:0,vy:0,life:.5,max:.5,color:col,size:7});
+}
+function killFX(t){
+ sfxN(.35,.25,300);sfx(100,.3,'sawtooth',.05);
+ const it=ITEMS.find(i=>i.id===SAVE.eq.fx);if(!it)return;
+ if(it.color==='rainbow'){
+  for(let i=0;i<40;i++){const a=rnd(0,6.283),s=rnd(100,420);PT.push({x:t.x,y:t.y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:.8,max:.8,color:`hsl(${rnd(0,360)},100%,60%)`,size:rnd(3,6)})}
+ }else{
+  burst(t.x,t.y,it.color,44,460,.9);
+  addFX({type:'ring',x:t.x,y:t.y,r:130,dur:.5,color:it.color});
+ }
+}
+function grantRewards(rank){
+ const base=Math.floor(ME.score/10),rb=[0,50,30,15][rank]||0,sb=ME.best*5;
+ let total=base+rb+sb;if(DOUBLE)total*=2;
+ SAVE.tokens+=total;SAVE.total.matches++;SAVE.total.kills+=ME.kills;if(rank===1)SAVE.total.wins++;
+ saveSave();updateTokenUI();
+ $('rReward').innerHTML=`<div style="font-size:18px">獲得代幣 <b style="color:var(--g)">⬡ +${total}</b></div>
+  <div class="help">積分 ${ME.score} ÷ 10 = ${base} · 名次獎勵 ${rb} · 最高連殺 ${ME.best} × 5 = ${sb}${DOUBLE?' · 雙倍券 ×2':''}</div>
+  <div class="help">目前代幣:⬡ ${SAVE.tokens} · 累計 ${SAVE.total.matches} 場 / ${SAVE.total.kills} 殺 / ${SAVE.total.wins} 勝</div>`;
+ if(rank===1)SFX.win();else SFX.lose();
+}
+
+/* ---------- 畫面切換與音樂連動 ---------- */
+const _show=show;
+show=function(id){
+ _show(id);
+ $('shop').classList.toggle('on',id==='shop');
+ if(id==='shop')renderShop();
+ if(id==='hud')music.set('battle');
+ else if(id==='pause')music.duck(true);
+ else music.set(id==='result'?'off':'menu');
+ if(id!=='pause')music.duck(false);
+};
+$('openShop').onclick=()=>show('shop');
+$('shopBack').onclick=()=>show('menu');
+$('sSnd').onchange=()=>{SND=$('sSnd').value==='1'};
+$('sBgm').onchange=()=>{BGM=$('sBgm').value==='1';music.refresh()};
+document.addEventListener('click',e=>{if(e.target.closest('.btn,.card'))SFX.click()});
+loadSave();dailyBonus();updateTokenUI();
+
 raf=requestAnimationFrame(loop);
 </script>
 </body>
