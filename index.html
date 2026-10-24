@@ -179,10 +179,12 @@ function initAudio(){
 }
 ['pointerdown','keydown'].forEach(ev=>addEventListener(ev,()=>{initAudio();if(AC&&AC.state==='suspended')AC.resume();music.refresh()},{passive:true}));
 
+let _ns=0;
 function sfx(f,d=.08,type='square',v=.03){
- if(!SND||!AC)return;
+ if(!SND||!AC||_ns>14)return;
  try{
   const t=AC.currentTime,o=AC.createOscillator(),g=AC.createGain();
+  _ns++;o.onended=()=>{_ns--};
   o.type=type;o.frequency.setValueAtTime(f,t);
   if(type==='sawtooth')o.frequency.exponentialRampToValueAtTime(Math.max(30,f*.5),t+d);
   g.gain.setValueAtTime(v*1.6,t);g.gain.exponentialRampToValueAtTime(.0001,t+d);
