@@ -81,6 +81,16 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 th,td{padding:6px 8px;text-align:center;border-bottom:1px solid rgba(255,255,255,.08)}th{color:var(--c);font-size:12px}
 tr.you td{color:var(--g);font-weight:700;background:rgba(182,255,60,.07)}
 @media (max-height:480px){#mini{display:none}#feed{top:60px}}
+.sgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+.shead{font-family:Orbitron,'Noto Sans TC',sans-serif;color:var(--c);margin-bottom:8px}
+.icard{border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.03);padding:10px;display:flex;flex-direction:column;gap:6px}
+.icard b{font-size:14px}.small{font-size:12px;color:#9fc3d6;min-height:16px}
+.sw{display:block;height:8px;border-radius:4px}
+.btn.sm{padding:8px 12px;font-size:13px;letter-spacing:1px}
+.chk{font-size:12px;color:#cfe6f2;display:flex;gap:6px;align-items:center}
+.tokens{font-family:Orbitron,sans-serif;color:var(--g);font-size:20px}
+#toast{position:fixed;left:50%;top:18%;transform:translateX(-50%);background:var(--p);border:1px solid var(--c);padding:8px 18px;z-index:50;opacity:0;transition:.3s;pointer-events:none}
+#toast.show{opacity:1}
 </style>
 </head>
 <body>
@@ -94,6 +104,7 @@ tr.you td{color:var(--g);font-weight:700;background:rgba(182,255,60,.07)}
   <label>對手數量<select id="sBots"><option value="5">5 隻</option><option value="7" selected>7 隻</option><option value="11">11 隻</option></select></label>
   <label>難度<select id="sDiff"><option value="0">簡單</option><option value="1" selected>普通</option><option value="2">困難</option></select></label>
   <label>音效<select id="sSnd"><option value="1">開</option><option value="0">關</option></select></label>
+  <label>背景音樂<select id="sBgm"><option value="1">開</option><option value="0">關</option></select></label>
  </div>
  <div class="help">模式:<b>裂隙積分戰</b>。時間到時積分最高者獲勝。擊殺 +100、連殺加分、在<b style="color:var(--m)">粉紅裂隙區</b>內擊殺再 +50。</div></div>
  <div class="panel"><div style="margin-bottom:8px;font-family:Orbitron,sans-serif;color:var(--c)">SELECT FIGHTER 選擇角色</div><div class="cards" id="cards"></div></div>
@@ -102,7 +113,7 @@ tr.you td{color:var(--g);font-weight:700;background:rgba(182,255,60,.07)}
   <b>手機:</b>左下搖桿移動。技能鍵「點一下」= 自動瞄準施放;「長按/拖曳」= 手動瞄準,放開施放;拖到下方紅色「取消」圈再放開 = 取消。<br>
   <b>提示:</b>打傷敵人與被打都會累積大招能量;綠色十字是補血節點,約 15 秒重生。
   <div id="best" style="margin-top:6px;color:var(--g)"></div></div>
- <div style="text-align:center;padding:6px"><button class="btn" id="go">START 開始戰鬥</button></div>
+ <div style="text-align:center;padding:6px"><button class="btn" id="go">START 開始戰鬥</button> <button class="btn alt" id="openShop">⬡ 商店 <span id="menuTokens">0</span></button></div>
 </div></div>
 
 <div id="hud">
@@ -128,10 +139,19 @@ tr.you td{color:var(--g);font-weight:700;background:rgba(182,255,60,.07)}
 
 <div id="result" class="screen"><div class="wrap">
  <h1 id="rTitle">TIME UP</h1><div class="sub" id="rSub"></div>
+  <div class="panel" id="rReward"></div>
  <div class="panel"><table id="rTable"></table></div>
  <div style="text-align:center"><button class="btn" id="again">再來一場</button> <button class="btn alt" id="toMenu">回選單</button></div>
 </div></div>
 
+<div id="shop" class="screen"><div class="wrap">
+ <h1 style="font-size:40px">RIFT SHOP</h1>
+ <div class="sub">代幣商店 · 持有 <span class="tokens">⬡ <span id="shopTokens">0</span></span></div>
+ <div id="shopBody"></div>
+ <div style="text-align:center;padding:6px"><button class="btn" id="shopBack">返回</button></div>
+</div></div>
+<div id="toast"></div> 
+ 
 <script>
 const $=id=>document.getElementById(id);
 const cv=$('cv'),ctx=cv.getContext('2d'),mini=$('mini'),mctx=mini.getContext('2d');
@@ -144,9 +164,117 @@ let DPR=1,vw=0,vh=0,zoom=1;
 function resize(){DPR=Math.min(window.devicePixelRatio||1,2);vw=innerWidth;vh=innerHeight;cv.width=vw*DPR;cv.height=vh*DPR;cv.style.width=vw+'px';cv.style.height=vh+'px';zoom=Math.max(.55,Math.min(vw,vh)/720)}
 addEventListener('resize',resize);resize();
 
-/* ---------- 音效 ---------- */
-let AC=null,SND=true;
-function sfx(f,d=.08,type='square',v=.03){if(!SND)return;try{AC=AC||new(window.AudioContext||window.webkitAudioContext)();const o=AC.createOscillator(),g=AC.createGain();o.type=type;o.frequency.value=f;g.gain.value=v;o.connect(g);g.connect(AC.destination);o.start();g.gain.exponentialRampToValueAtTime(.0001,AC.currentTime+d);o.stop(AC.currentTime+d)}catch(e){}}
+/* ---------- 音效 + 背景音樂引擎 ---------- */
+let AC=null,SND=true,BGM=true,master=null,mg=null,sg=null,NB=null;
+function initAudio(){
+ if(AC)return;
+ try{
+  AC=new(window.AudioContext||window.webkitAudioContext)();
+  master=AC.createGain();master.gain.value=.9;master.connect(AC.destination);
+  mg=AC.createGain();mg.gain.value=.5;mg.connect(master);
+  sg=AC.createGain();sg.gain.value=1;sg.connect(master);
+  NB=AC.createBuffer(1,AC.sampleRate,AC.sampleRate);
+  const d=NB.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
+ }catch(e){AC=null}
+}
+['pointerdown','keydown'].forEach(ev=>addEventListener(ev,()=>{initAudio();if(AC&&AC.state==='suspended')AC.resume();music.refresh()},{passive:true}));
+
+function sfx(f,d=.08,type='square',v=.03){
+ if(!SND||!AC)return;
+ try{
+  const t=AC.currentTime,o=AC.createOscillator(),g=AC.createGain();
+  o.type=type;o.frequency.setValueAtTime(f,t);
+  if(type==='sawtooth')o.frequency.exponentialRampToValueAtTime(Math.max(30,f*.5),t+d);
+  g.gain.setValueAtTime(v*1.6,t);g.gain.exponentialRampToValueAtTime(.0001,t+d);
+  o.connect(g);g.connect(sg);o.start(t);o.stop(t+d+.02);
+ }catch(e){}
+}
+function sfxN(d=.2,v=.2,hp=0){
+ if(!SND||!AC)return;
+ try{
+  const t=AC.currentTime,s=AC.createBufferSource(),g=AC.createGain();
+  s.buffer=NB;g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(.0001,t+d);
+  if(hp){const f=AC.createBiquadFilter();f.type='highpass';f.frequency.value=hp;s.connect(f);f.connect(g)}else s.connect(g);
+  g.connect(sg);s.start(t);s.stop(t+d+.02);
+ }catch(e){}
+}
+const SFX={
+ click:()=>sfx(900,.05,'square',.03),
+ beep:()=>sfx(660,.12,'sine',.07),
+ go:()=>sfx(1000,.35,'square',.06),
+ tick:()=>sfx(1000,.05,'square',.04),
+ ready:()=>{sfx(1200,.1,'triangle',.05);setTimeout(()=>sfx(1600,.15,'triangle',.05),90)},
+ deny:()=>sfx(160,.2,'sawtooth',.06),
+ buy:()=>[660,880,1320].forEach((f,i)=>setTimeout(()=>sfx(f,.12,'triangle',.06),i*70)),
+ win:()=>[523,659,784,1047].forEach((f,i)=>setTimeout(()=>sfx(f,.25,'triangle',.07),i*130)),
+ lose:()=>[392,330,262].forEach((f,i)=>setTimeout(()=>sfx(f,.3,'sawtooth',.05),i*160))
+};
+
+/* 背景音樂:程式合成,不需要任何音檔 */
+function tone(f,t,d,type,v,dest){
+ dest=dest||mg;const o=AC.createOscillator(),g=AC.createGain();
+ o.type=type;o.frequency.setValueAtTime(f,t);
+ g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(v,t+.01);g.gain.exponentialRampToValueAtTime(.0001,t+d);
+ o.connect(g);g.connect(dest);o.start(t);o.stop(t+d+.02);
+}
+function nz(t,d,v,hp){
+ const s=AC.createBufferSource(),g=AC.createGain();s.buffer=NB;
+ g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(.0001,t+d);
+ if(hp){const f=AC.createBiquadFilter();f.type='highpass';f.frequency.value=hp;s.connect(f);f.connect(g)}else s.connect(g);
+ g.connect(mg);s.start(t);s.stop(t+d+.02);
+}
+function kick(t,v){
+ const o=AC.createOscillator(),g=AC.createGain();
+ o.frequency.setValueAtTime(150,t);o.frequency.exponentialRampToValueAtTime(42,t+.14);
+ g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(.0001,t+.18);
+ o.connect(g);g.connect(mg);o.start(t);o.stop(t+.2);
+}
+const CHORDS=[[220,261.63,329.63,440],[174.61,220,261.63,349.23],[261.63,329.63,392,523.25],[196,246.94,293.66,392]];
+const ROOTS=[55,43.65,65.41,49],ARP=[0,1,2,3,2,1,2,3];
+const music={mode:'off',step:0,nt:0,tid:null,inten:0,
+ set(m){if(m===this.mode)return;this.mode=m;this.step=0;this.refresh()},
+ refresh(){
+  clearInterval(this.tid);this.tid=null;
+  if(!AC||!BGM||this.mode==='off')return;
+  this.nt=AC.currentTime+.05;this.tid=setInterval(()=>this.sched(),30);
+ },
+ duck(on){if(AC&&mg)mg.gain.setTargetAtTime(on?.12:.5,AC.currentTime,.05)},
+ sched(){
+  if(!AC||!BGM){return}
+  const bpm=this.mode==='battle'?(this.inten?138:124):88;
+  while(this.nt<AC.currentTime+.15){this.play(this.step,this.nt);this.nt+=60/bpm/4;this.step++}
+ },
+ play(s,t){
+  const k=s&15,bar=(s>>4)&3,ch=CHORDS[bar],it=this.inten;
+  if(this.mode==='battle'){
+   if(k%4===0||(it&&k===10))kick(t,k%4===0?.8:.5);
+   if(k===4||k===12){nz(t,.14,.3,1500);tone(190,t,.1,'triangle',.18)}
+   if(k%2===0)nz(t,.04,.1,7000);else if(it)nz(t,.03,.05,8000);
+   if([0,3,6,8,11,14].includes(k))tone(ROOTS[bar],t,.2,'sawtooth',.16);
+   tone(ch[ARP[k&7]]*(it&&k%4===3?2:1),t,.12,it?'sawtooth':'square',.045);
+   if(k===0)tone(ch[0]*2,t,.9,'triangle',.05);
+  }else{
+   if(k===0){ch.forEach(f=>tone(f,t,2.8,'sine',.05));kick(t,.35)}
+   if(k===8)kick(t,.25);
+   if(k%2===0)tone(ch[ARP[(k>>1)&7]]*2,t,.25,'triangle',.04);
+   if(k%4===2)nz(t,.03,.04,8000);
+  }
+ }
+};
+let _lc=-1,_lt=-1,_ur=false,_hb=0;
+function audioTick(dt){
+ if(!G||G.over||G.paused)return;
+ if(G.count>3.1){_lc=-1;_lt=-1;_ur=false}
+ if(G.count>0){const c=Math.ceil(G.count);if(c!==_lc&&c<=3){_lc=c;SFX.beep()}return}
+ if(_lc!==0){_lc=0;SFX.go()}
+ const rem=G.dur-G.t,r=Math.ceil(rem);
+ if(rem<=10&&rem>0&&r!==_lt){_lt=r;SFX.tick()}
+ music.inten=rem<30?1:0;
+ if(ME){
+  const rd=ME.ult>=100;if(rd&&!_ur&&!ME.dead)SFX.ready();_ur=rd;
+  if(!ME.dead&&ME.hp<ME.max*.25){_hb-=dt;if(_hb<=0){_hb=.7;sfx(70,.12,'sine',.08)}}
+ }
+}
 
 /* ---------- 地圖 ---------- */
 const walls=[];
