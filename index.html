@@ -625,7 +625,7 @@ function draw(){
   const bw=44,by=f.y-f.r-16;
   ctx.fillStyle='rgba(0,0,0,.6)';ctx.fillRect(f.x-bw/2,by,bw,5);
   ctx.fillStyle=f===ME?'#b6ff3c':(f.hp/f.max>.4?'#ff4b6e':'#ff9f2b');ctx.fillRect(f.x-bw/2,by,bw*Math.max(0,f.hp/f.max),5);
-  ctx.fillStyle=f===ME?'#b6ff3c':'#cfe6f2';ctx.font='bold 12px "Noto Sans TC",sans-serif';ctx.textAlign='center';ctx.fillText(f.name,f.x,by-5);
+  ctx.fillStyle=f===ME?'#b6ff3c':'#cfe6f2';ctx.font='bold 12px "Noto Sans TC",sans-serif';ctx.textAlign='center';ctx.fillText((f.title?'['+f.title+'] ':'')+f.name,f.x,by-5);
   if(f.streak>=2){ctx.fillStyle='#ffe14b';ctx.fillText('🔥'+f.streak,f.x,by-18)}
   if(f===ME){ctx.fillStyle='#b6ff3c';ctx.beginPath();ctx.moveTo(f.x,f.y+f.r+16);ctx.lineTo(f.x-7,f.y+f.r+26);ctx.lineTo(f.x+7,f.y+f.r+26);ctx.fill()}
   ctx.globalAlpha=1;
