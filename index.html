@@ -323,7 +323,7 @@ function hurt(t,src,dmg,kb=0,fx,fy,stun=0){
 function inZone(f){return ZONE&&Math.hypot(f.x-ZONE.x,f.y-ZONE.y)<ZONE.r}
 function killF(t,src){
  t.dead=true;t.respawn=3;t.deaths++;const lost=t.streak;t.streak=0;t.ult*=.5;t.hp=0;
- burst(t.x,t.y,t.c.color,36,420,.8);addFX({type:'ring',x:t.x,y:t.y,r:90,dur:.45,color:t.c.color});
+ burst(t.x,t.y,t.c.color,36,420,.8);if(src===ME)killFX(t);addFX({type:'ring',x:t.x,y:t.y,r:90,dur:.45,color:t.c.color});
  if(t===ME){shake=14;sfx(80,.4,'sawtooth',.06);announce('被擊倒!','#ff4b4b')}
  if(src&&src!==t){
   src.kills++;src.streak++;src.best=Math.max(src.best,src.streak);
@@ -531,6 +531,7 @@ function update(dt){
  G.t+=dt;const rem=Math.max(0,G.dur-G.t);
  ZONE.t-=dt;if(ZONE.t<=0){let n;do{n=ZPOS[Math.floor(Math.random()*ZPOS.length)]}while(n[0]===ZONE.x&&n[1]===ZONE.y);ZONE.x=n[0];ZONE.y=n[1];ZONE.t=25;announce('裂隙區轉移!','#ff2bd6');burst(ZONE.x,ZONE.y,'#ff2bd6',30,300,.8)}
  for(const f of F){if(f.isP)step(f,playerInput(f),dt);else{if(!f.dead)aiThink(f,dt);step(f,f.inp,dt)}}
+ trailTick(dt);
  for(let i=0;i<F.length;i++)for(let j=i+1;j<F.length;j++){const a=F[i],b=F[j];if(a.dead||b.dead)continue;const dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy),m=a.r+b.r;if(d<m&&d>.01){const p=(m-d)/2;a.x-=dx/d*p;a.y-=dy/d*p;b.x+=dx/d*p;b.y+=dy/d*p}}
  for(let i=P.length-1;i>=0;i--){const p=P[i];p.x+=p.vx*dt;p.y+=p.vy*dt;p.life-=dt;let dead=p.life<=0||p.x<0||p.y<0||p.x>W||p.y>H||inWall(p.x,p.y,p.r);
   if(!dead)for(const t of F){if(t===p.src||t.dead||(p.hit&&p.hit.has(t)))continue;
@@ -686,10 +687,11 @@ function show(id){
 }
 function startGame(){
  F=[];P=[];FX=[];PT=[];TX=[];TM=[];AZ=[];uid=0;shake=0;CASTQ.length=0;hideAim();$('feed').innerHTML='';
- cfg.time=+$('sTime').value;cfg.bots=+$('sBots').value;cfg.diff=+$('sDiff').value;SND=$('sSnd').value==='1';
+ cfg.time=+$('sTime').value;cfg.bots=+$('sBots').value;cfg.diff=+$('sDiff').value;SND=$('sSnd').value==='1';BGM=$('sBgm').value==='1';
  ME=mkF(cfg.ch,($('nm').value||'PLAYER').slice(0,10),true);F.push(ME);
  const names=[...BOTN].sort(()=>Math.random()-.5);
  for(let i=0;i<cfg.bots;i++)F.push(mkF(Math.floor(Math.random()*4),names[i],false));
+ applyPerks(ME);
  for(const f of F)spawn(f);
  PACKS=PACKS0.map(p=>({x:p[0],y:p[1],cd:0}));
  ZONE={x:1200,y:800,r:230,t:25};
@@ -728,6 +730,7 @@ function endGame(){
  arr.forEach((f,i)=>{h+=`<tr class="${f===ME?'you':''}"><td>${i+1}</td><td>${f.name}</td><td>${f.c.name}</td><td>${f.score}</td><td>${f.kills}</td><td>${f.deaths}</td><td>${f.best}</td></tr>`});
  $('rTable').innerHTML=h;
  try{const b=+localStorage.getItem('nr_best')||0;if(ME.score>b)localStorage.setItem('nr_best',ME.score)}catch(e){}
+ grantRewards(rank);
  showBest();show('result');
 }
 function showBest(){
