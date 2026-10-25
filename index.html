@@ -564,27 +564,6 @@ function drawAim(){
  if(A.t!=='line'){ctx.globalAlpha=.7;ctx.beginPath();ctx.moveTo(ME.x,ME.y);ctx.lineTo(ME.x+Math.cos(a)*60,ME.y+Math.sin(a)*60);ctx.lineWidth=3;ctx.stroke()}
  ctx.restore();
 }
-const SPR={};
-function glowRect(w,h,color,blur){
- const k='r'+w+'x'+h+color+blur;if(SPR[k])return SPR[k];
- const pad=blur*2,c=document.createElement('canvas');c.width=(w+pad*2)*2;c.height=(h+pad*2)*2;
- const g=c.getContext('2d');g.scale(2,2);g.shadowColor=color;g.shadowBlur=blur*2;g.strokeStyle=color;g.lineWidth=2;g.strokeRect(pad,pad,w,h);
- return SPR[k]={c,pad};
-}
-function glowCircle(color,r,blur){
- const k='c'+color+r+blur;if(SPR[k])return SPR[k];
- const pad=blur*2,c=document.createElement('canvas');c.width=c.height=(r+pad)*4;
- const g=c.getContext('2d');g.scale(2,2);g.shadowColor=color;g.shadowBlur=blur*2;g.strokeStyle=color;g.lineWidth=3;
- g.beginPath();g.arc(r+pad,r+pad,r,0,6.283);g.stroke();
- return SPR[k]={c,pad};
-}
-function dot(color){
- const k='d'+color;if(SPR[k])return SPR[k];
- const c=document.createElement('canvas');c.width=c.height=64;
- const g=c.getContext('2d'),gr=g.createRadialGradient(32,32,0,32,32,32);
- gr.addColorStop(0,color);gr.addColorStop(.3,color);gr.addColorStop(1,'rgba(0,0,0,0)');
- g.fillStyle=gr;g.fillRect(0,0,64,64);return SPR[k]=c;
-}
 function draw(){
  const t=performance.now()/1000;
  if(ME&&!ME.dead){camX=ME.x-vw/zoom/2;camY=ME.y-vh/zoom/2}
